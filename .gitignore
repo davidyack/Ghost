@@ -58,11 +58,11 @@ CHANGELOG.md
 # Casper generated files
 /core/test/functional/*.png
 
-config.js
+#config.js
 /core/client/config.js
 
 # Built asset files
-/core/built
+#/core/built
 /core/client/assets/css
 /core/client/assets/img/contributors/
 /core/client/docs/dist/css
