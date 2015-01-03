@@ -63,7 +63,7 @@ CHANGELOG.md
 
 # Built asset files
 #/core/built
-/core/client/assets/css
+#/core/client/assets/css
 /core/client/assets/img/contributors/
 /core/client/docs/dist/css
 /core/client/templates/-contributors.hbs
