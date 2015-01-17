@@ -2,6 +2,7 @@
 // Setup your Ghost install for various environments
 // Documentation can be found at http://support.ghost.org/config/
 
+
 var path = require('path'),
     config;
 
@@ -10,7 +11,7 @@ config = {
     // When running Ghost in the wild, use the production environment
     // Configure your URL and mail settings here
     production: {
-        url: 'http://dycrmblog.azurewebsites.net',
+        url: 'http://crm.davidyack.com',
         mail: {},
         database: {
             client: 'sqlite3',
@@ -19,6 +20,16 @@ config = {
             },
             debug: false
         },
+	 mail: {
+             transport: 'SMTP',
+             options: {
+                 service: 'Sendgrid',
+                 auth: {
+                      user: process.env.SMTP_USER,
+                      pass: process.env.SMTP_PASS
+                 }
+             }
+         },
 
         server: {
             // Host to be passed to node's `net.Server#listen()`
