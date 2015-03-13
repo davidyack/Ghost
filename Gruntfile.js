@@ -860,10 +860,19 @@ var _              = require('lodash'),
         grunt.registerTask('init', 'Prepare the project for development',
             ['shell:ember:init', 'shell:bower', 'update_submodules', 'assets', 'default']);
 
+<<<<<<< HEAD
         // ### Basic Asset Building
         // Builds and moves necessary client assets. Prod additionally builds the ember app.
         grunt.registerTask('assets', 'Basic asset building & moving',
             ['clean:tmp', 'buildAboutPage', 'copy:jquery']);
+=======
+        // ### Production assets
+        // `grunt prod` - will build the minified assets used in production.
+        //
+        // It is otherwise the same as running `grunt`, but is only used when running Ghost in the `production` env.
+        grunt.registerTask('prod', 'Build JS & templates for production',
+            ['concat:prod', 'copy:prod', 'emberBuildProd', 'uglify:prod']);
+>>>>>>> crmblog
 
         // ### Default asset build
         // `grunt` - default grunt task
