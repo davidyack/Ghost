@@ -2,7 +2,6 @@
 // Setup your Ghost install for various environments
 // Documentation can be found at http://support.ghost.org/config/
 
-
 var path = require('path'),
     config;
 
