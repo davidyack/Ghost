@@ -5,20 +5,20 @@
 // **Usage instructions:** can be found in the [Custom Tasks](#custom%20tasks) section or by running `grunt --help`.
 //
 // **Debug tip:** If you have any problems with any Grunt tasks, try running them with the `--verbose` command
-var _              = require('lodash'),
-    colors         = require('colors'),
-    fs             = require('fs-extra'),
-    moment         = require('moment'),
+var _ = require('lodash'),
+    colors = require('colors'),
+    fs = require('fs-extra'),
+    moment = require('moment'),
     getTopContribs = require('top-gh-contribs'),
-    path           = require('path'),
-    Promise        = require('bluebird'),
-    request        = require('request'),
+    path = require('path'),
+    Promise = require('bluebird'),
+    request = require('request'),
 
-    escapeChar     = process.platform.match(/^win/) ? '^' : '\\',
-    cwd            = process.cwd().replace(/( |\(|\))/g, escapeChar + '$1'),
+    escapeChar = process.platform.match(/^win/) ? '^' : '\\',
+    cwd = process.cwd().replace(/( |\(|\))/g, escapeChar + '$1'),
     buildDirectory = path.resolve(cwd, '.build'),
-    distDirectory  = path.resolve(cwd, '.dist'),
-    mochaPath      = path.resolve(cwd + '/node_modules/grunt-mocha-cli/node_modules/mocha/bin/mocha'),
+    distDirectory = path.resolve(cwd, '.dist'),
+    mochaPath = path.resolve(cwd + '/node_modules/grunt-mocha-cli/node_modules/mocha/bin/mocha'),
 
     // ## Build File Patterns
     // A list of files and patterns to include when creating a release zip.
@@ -26,7 +26,7 @@ var _              = require('lodash'),
     // file defines what to ignore, whereas we want to define what to include.
     buildGlob = (function () {
         /*jslint stupid:true */
-        return fs.readFileSync('.npmignore', {encoding: 'utf8'}).split('\n').map(function (pattern) {
+        return fs.readFileSync('.npmignore', { encoding: 'utf8' }).split('\n').map(function (pattern) {
             if (pattern[0] === '!') {
                 return pattern.substr(1);
             }
@@ -41,7 +41,7 @@ var _              = require('lodash'),
 
     configureGrunt = function (grunt) {
         // *This is not useful but required for jshint*
-        colors.setTheme({silly: 'rainbow'});
+        colors.setTheme({ silly: 'rainbow' });
 
         // #### Load all grunt tasks
         //
@@ -78,8 +78,8 @@ var _              = require('lodash'),
                     }
                 },
                 express: {
-                    files:  ['core/server.js', 'core/server/**/*.js'],
-                    tasks:  ['express:dev'],
+                    files: ['core/server.js', 'core/server/**/*.js'],
+                    tasks: ['express:dev'],
                     options: {
                         // **Note:** Without this option specified express won't be reloaded
                         nospawn: true
@@ -278,16 +278,20 @@ var _              = require('lodash'),
                                 return 'echo Installing client dependencies... && npm install';
 
                             case 'prod':
-                                return './node_modules/.bin/ember build --environment=production --silent';
+                                //return 'node_modules/.bin/ember build --environment=production --silent';
+                                return '\"node_modules/.bin/ember\"  build --environment=production --silent';
 
                             case 'dev':
-                                return './node_modules/.bin/ember build --silent';
+                                //return 'node_modules/.bin/ember build --silent';
+                                return '\"node_modules/.bin/ember\"  build --silent';
 
                             case 'test':
-                                return './node_modules/.bin/ember test --silent';
+                                return 'node_modules/.bin/ember test --silent';
 
                             default:
-                                return './node_modules/.bin/ember build --silent';
+                                //return 'node_modules/.bin/ember build --silent';
+                                return '\"node_modules/.bin/ember\"  build --silent';
+
                         }
                     },
                     options: {
@@ -310,7 +314,7 @@ var _              = require('lodash'),
 
                 test: {
                     command: function (test) {
-                        return 'node ' + mochaPath  + ' --timeout=15000 --ui=bdd --reporter=spec core/test/' + test;
+                        return 'node ' + mochaPath + ' --timeout=15000 --ui=bdd --reporter=spec core/test/' + test;
                     }
                 },
 
@@ -547,7 +551,7 @@ var _              = require('lodash'),
         // in a "new" state.
         grunt.registerTask('cleanDatabase', function () {
             var done = this.async(),
-                models    = require('./core/server/models'),
+                models = require('./core/server/models'),
                 migration = require('./core/server/data/migration');
 
             migration.reset().then(function () {
@@ -860,18 +864,13 @@ var _              = require('lodash'),
         grunt.registerTask('init', 'Prepare the project for development',
             ['shell:ember:init', 'shell:bower', 'update_submodules', 'assets', 'default']);
 
+        grunt.registerTask('dave', 'Prepare the project for development',
+           [ 'shell:bower', 'update_submodules', 'assets', 'default']);
+
         // ### Basic Asset Building
         // Builds and moves necessary client assets. Prod additionally builds the ember app.
         grunt.registerTask('assets', 'Basic asset building & moving',
             ['clean:tmp', 'buildAboutPage', 'copy:jquery']);
-
-        // ### Production assets
-        // `grunt prod` - will build the minified assets used in production.
-        //
-        // It is otherwise the same as running `grunt`, but is only used when running Ghost in the `production` env.
-        grunt.registerTask('prod', 'Build JS & templates for production',
-            ['concat:prod', 'copy:prod', 'emberBuildProd', 'uglify:prod']);
-
 
         // ### Default asset build
         // `grunt` - default grunt task
@@ -917,3 +916,4 @@ var _              = require('lodash'),
 
 // Export the configuration
 module.exports = configureGrunt;
+
