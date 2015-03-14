@@ -12,9 +12,9 @@ logs
 results
 
 npm-debug.log
-bower_components
-node_modulestest
 node_modules
+node_modules_test
+bower_components
 .bowerrc
 .idea/*
 *.iml
@@ -44,6 +44,7 @@ Session.vim
 .tmp
 
 /core/server/data/export/exported*
+/core/client/docs/_site
 /content/tmp/*
 /content/data/*
 /content/apps/**/*
@@ -62,16 +63,12 @@ CHANGELOG.md
 /core/client/config.js
 
 # Built asset files
-<<<<<<< HEAD
-/core/built
-/core/server/views/default.hbs
-=======
 #/core/built
 #/core/client/assets/css
 /core/client/assets/img/contributors/
 /core/client/docs/dist/css
 /core/client/templates/-contributors.hbs
->>>>>>> crmblog
 
 # Coverage reports
 coverage.html
+
