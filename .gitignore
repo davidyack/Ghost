@@ -14,6 +14,7 @@ results
 npm-debug.log
 bower_components
 node_modulestest
+node_modules
 .bowerrc
 .idea/*
 *.iml
