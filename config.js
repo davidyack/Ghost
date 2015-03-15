@@ -11,7 +11,7 @@ config = {
     // When running Ghost in the wild, use the production environment
     // Configure your URL and mail settings here
     production: {
-        url: 'http://dyblog.azurewebsites.net',
+        url: 'http://owhblog.azurewebsites.net',
         mail: {},
         database: {
             client: 'sqlite3',
