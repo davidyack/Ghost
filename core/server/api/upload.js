@@ -1,16 +1,12 @@
-var config  = require('../config'),
-    Promise = require('bluebird'),
-    fs      = require('fs-extra'),
-    storage = require('../storage'),
-    errors  = require('../errors'),
-    utils   = require('./utils'),
-
+var Promise = require('bluebird'),
+    fs = require('fs-extra'),
+    storage = require('../adapters/storage'),
     upload;
 
 /**
  * ## Upload API Methods
  *
- * **See:** [API Methods](index.js.html#api%20methods)
+ * **See:** [API Methods](constants.js.html#api%20methods)
  */
 upload = {
 
@@ -19,31 +15,16 @@ upload = {
      *
      * @public
      * @param {{context}} options
-     * @returns {Promise} Success
+     * @returns {Promise<String>} location of uploaded file
      */
-    add: function (options) {
-        var store = storage.getStorage(),
-            filepath;
+    add: Promise.method(function (options) {
+        var store = storage.getStorage();
 
-        // Check if a file was provided
-        if (!utils.checkFileExists(options, 'uploadimage')) {
-            return Promise.reject(new errors.NoPermissionError('Please select an image.'));
-        }
-
-        // Check if the file is valid
-        if (!utils.checkFileIsValid(options.uploadimage, config.uploads.contentTypes, config.uploads.extensions)) {
-            return Promise.reject(new errors.UnsupportedMediaTypeError('Please select a valid image.'));
-        }
-
-        filepath = options.uploadimage.path;
-
-        return store.save(options.uploadimage).then(function (url) {
-            return url;
-        }).finally(function () {
+        return store.save(options).finally(function () {
             // Remove uploaded file from tmp location
-            return Promise.promisify(fs.unlink)(filepath);
+            return fs.unlink(options.path);
         });
-    }
+    })
 };
 
 module.exports = upload;

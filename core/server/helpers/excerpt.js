@@ -5,37 +5,28 @@
 //
 // Defaults to words="50"
 
-var hbs             = require('express-hbs'),
-    _               = require('lodash'),
-    downsize        = require('downsize'),
-    excerpt;
+var proxy = require('./proxy'),
+    _ = require('lodash'),
+    SafeString = proxy.SafeString,
+    getMetaDataExcerpt = proxy.metaData.getMetaDataExcerpt;
 
-excerpt = function (options) {
+module.exports = function excerpt(options) {
     var truncateOptions = (options || {}).hash || {},
-        excerpt;
+        excerptText = this.custom_excerpt ? String(this.custom_excerpt) : String(this.html);
 
     truncateOptions = _.pick(truncateOptions, ['words', 'characters']);
     _.keys(truncateOptions).map(function (key) {
         truncateOptions[key] = parseInt(truncateOptions[key], 10);
     });
 
-    /*jslint regexp:true */
-    excerpt = String(this.html);
-    // Strip inline and bottom footnotes
-    excerpt = excerpt.replace(/<a.*?rel="footnote">.*?<\/a>/gi, '');
-    excerpt = excerpt.replace(/<div class="footnotes"><ol>.*?<\/ol><\/div>/, '');
-    // Strip other html
-    excerpt = excerpt.replace(/<\/?[^>]+>/gi, '');
-    excerpt = excerpt.replace(/(\r\n|\n|\r)+/gm, ' ');
-    /*jslint regexp:false */
-
-    if (!truncateOptions.words && !truncateOptions.characters) {
-        truncateOptions.words = 50;
+    if (!_.isEmpty(this.custom_excerpt)) {
+        truncateOptions.characters = this.custom_excerpt.length;
+        if (truncateOptions.words) {
+            delete truncateOptions.words;
+        }
     }
 
-    return new hbs.handlebars.SafeString(
-        downsize(excerpt, truncateOptions)
+    return new SafeString(
+        getMetaDataExcerpt(excerptText, truncateOptions)
     );
 };
-
-module.exports = excerpt;

@@ -1,21 +1,158 @@
-var Promise = require('bluebird'),
-    fs = require('fs'),
-    semver = require('semver'),
-    packageInfo = require('../../package.json'),
-    errors = require('./errors'),
-    config = require('./config');
+// # Ghost Server
+// Handles the creation of an HTTP Server for Ghost
+var debug = require('ghost-ignition').debug('server'),
+    Promise = require('bluebird'),
+    fs = require('fs-extra'),
+    path = require('path'),
+    _ = require('lodash'),
+    config = require('./config'),
+    urlService = require('./services/url'),
+    common = require('./lib/common'),
+    moment = require('moment');
 
+/**
+ * ## GhostServer
+ * @constructor
+ * @param {Object} rootApp - parent express instance
+ */
 function GhostServer(rootApp) {
     this.rootApp = rootApp;
     this.httpServer = null;
     this.connections = {};
     this.connectionId = 0;
-    this.upgradeWarning = setTimeout(this.logUpgradeWarning.bind(this), 5000);
 
     // Expose config module for use externally.
     this.config = config;
 }
 
+/**
+ * ## Public API methods
+ *
+ * ### Start
+ * Starts the ghost server listening on the configured port.
+ * Alternatively you can pass in your own express instance and let Ghost
+ * start listening for you.
+ * @param  {Object} externalApp - Optional express app instance.
+ * @return {Promise} Resolves once Ghost has started
+ */
+GhostServer.prototype.start = function (externalApp) {
+    debug('Starting...');
+    var self = this,
+        rootApp = externalApp ? externalApp : self.rootApp,
+        socketConfig, socketValues = {
+            path: path.join(config.get('paths').contentPath, config.get('env') + '.socket'),
+            permissions: '660'
+        };
+
+    return new Promise(function (resolve, reject) {
+        if (config.get('server').hasOwnProperty('socket')) {
+            socketConfig = config.get('server').socket;
+
+            if (_.isString(socketConfig)) {
+                socketValues.path = socketConfig;
+            } else if (_.isObject(socketConfig)) {
+                socketValues.path = socketConfig.path || socketValues.path;
+                socketValues.permissions = socketConfig.permissions || socketValues.permissions;
+            }
+
+            // Make sure the socket is gone before trying to create another
+            try {
+                fs.unlinkSync(socketValues.path);
+            } catch (e) {
+                // We can ignore this.
+            }
+
+            self.httpServer = rootApp.listen(socketValues.path);
+            fs.chmod(socketValues.path, socketValues.permissions);
+            config.set('server:socket', socketValues);
+        } else {
+            self.httpServer = rootApp.listen(
+                config.get('server').port,
+                config.get('server').host
+            );
+        }
+
+        self.httpServer.on('error', function (error) {
+            var ghostError;
+
+            if (error.errno === 'EADDRINUSE') {
+                ghostError = new common.errors.GhostError({
+                    message: common.i18n.t('errors.httpServer.addressInUse.error'),
+                    context: common.i18n.t('errors.httpServer.addressInUse.context', {port: config.get('server').port}),
+                    help: common.i18n.t('errors.httpServer.addressInUse.help')
+                });
+            } else {
+                ghostError = new common.errors.GhostError({
+                    message: common.i18n.t('errors.httpServer.otherError.error', {errorNumber: error.errno}),
+                    context: common.i18n.t('errors.httpServer.otherError.context'),
+                    help: common.i18n.t('errors.httpServer.otherError.help')
+                });
+            }
+
+            reject(ghostError);
+        });
+        self.httpServer.on('connection', self.connection.bind(self));
+        self.httpServer.on('listening', function () {
+            debug('...Started');
+            common.events.emit('server.start');
+            self.logStartMessages();
+            resolve(self);
+        });
+    });
+};
+
+/**
+ * ### Stop
+ * Returns a promise that will be fulfilled when the server stops. If the server has not been started,
+ * the promise will be fulfilled immediately
+ * @returns {Promise} Resolves once Ghost has stopped
+ */
+GhostServer.prototype.stop = function () {
+    var self = this;
+
+    return new Promise(function (resolve) {
+        if (self.httpServer === null) {
+            resolve(self);
+        } else {
+            self.httpServer.close(function () {
+                common.events.emit('server.stop');
+                self.httpServer = null;
+                self.logShutdownMessages();
+                resolve(self);
+            });
+
+            self.closeConnections();
+        }
+    });
+};
+
+/**
+ * ### Restart
+ * Restarts the ghost application
+ * @returns {Promise} Resolves once Ghost has restarted
+ */
+GhostServer.prototype.restart = function () {
+    return this.stop().then(function (ghostServer) {
+        return ghostServer.start();
+    });
+};
+
+/**
+ * ### Hammertime
+ * To be called after `stop`
+ */
+GhostServer.prototype.hammertime = function () {
+    common.logging.info(common.i18n.t('notices.httpServer.cantTouchThis'));
+
+    return Promise.resolve(this);
+};
+
+/**
+ * ## Private (internal) methods
+ *
+ * ### Connection
+ * @param {Object} socket
+ */
 GhostServer.prototype.connection = function (socket) {
     var self = this;
 
@@ -29,9 +166,11 @@ GhostServer.prototype.connection = function (socket) {
     self.connections[socket._ghostId] = socket;
 };
 
-// Most browsers keep a persistent connection open to the server
-// which prevents the close callback of httpServer from returning
-// We need to destroy all connections manually
+/**
+ * ### Close Connections
+ * Most browsers keep a persistent connection open to the server, which prevents the close callback of
+ * httpServer from returning. We need to destroy all connections manually.
+ */
 GhostServer.prototype.closeConnections = function () {
     var self = this;
 
@@ -44,162 +183,49 @@ GhostServer.prototype.closeConnections = function () {
     });
 };
 
+/**
+ * ### Log Start Messages
+ */
 GhostServer.prototype.logStartMessages = function () {
-    // Tell users if their node version is not supported, and exit
-    if (!semver.satisfies(process.versions.node, packageInfo.engines.node)) {
-        console.log(
-            '\nERROR: Unsupported version of Node'.red,
-            '\nGhost needs Node version'.red,
-            packageInfo.engines.node.yellow,
-            'you are using version'.red,
-            process.versions.node.yellow,
-            '\nPlease go to http://nodejs.org to get a supported version'.green
-        );
-
-        process.exit(0);
-    }
-
     // Startup & Shutdown messages
-    if (process.env.NODE_ENV === 'production') {
-        console.log(
-            'Ghost is running...'.green,
-            '\nYour blog is now available on',
-            config.url,
-            '\nCtrl+C to shut down'.grey
-        );
+    if (config.get('env') === 'production') {
+        common.logging.info(common.i18n.t('notices.httpServer.ghostIsRunningIn', {env: config.get('env')}));
+        common.logging.info(common.i18n.t('notices.httpServer.yourBlogIsAvailableOn', {url: urlService.utils.urlFor('home', true)}));
+        common.logging.info(common.i18n.t('notices.httpServer.ctrlCToShutDown'));
     } else {
-        console.log(
-            ('Ghost is running in ' + process.env.NODE_ENV + '...').green,
-            '\nListening on',
-                config.getSocket() || config.server.host + ':' + config.server.port,
-            '\nUrl configured as:',
-            config.url,
-            '\nCtrl+C to shut down'.grey
-        );
+        common.logging.info(common.i18n.t('notices.httpServer.ghostIsRunningIn', {env: config.get('env')}));
+        common.logging.info(common.i18n.t('notices.httpServer.listeningOn', {
+            host: config.get('server').socket || config.get('server').host,
+            port: config.get('server').port
+        }));
+        common.logging.info(common.i18n.t('notices.httpServer.urlConfiguredAs', {url: urlService.utils.urlFor('home', true)}));
+        common.logging.info(common.i18n.t('notices.httpServer.ctrlCToShutDown'));
     }
 
     function shutdown() {
-        console.log('\nGhost has shut down'.red);
-        if (process.env.NODE_ENV === 'production') {
-            console.log(
-                '\nYour blog is now offline'
-            );
+        common.logging.warn(common.i18n.t('notices.httpServer.ghostHasShutdown'));
+
+        if (config.get('env') === 'production') {
+            common.logging.warn(common.i18n.t('notices.httpServer.yourBlogIsNowOffline'));
         } else {
-            console.log(
-                '\nGhost was running for',
-                Math.round(process.uptime()),
-                'seconds'
+            common.logging.warn(
+                common.i18n.t('notices.httpServer.ghostWasRunningFor'),
+                moment.duration(process.uptime(), 'seconds').humanize()
             );
         }
+
         process.exit(0);
     }
+
     // ensure that Ghost exits correctly on Ctrl+C and SIGTERM
-    process.
-        removeAllListeners('SIGINT').on('SIGINT', shutdown).
-        removeAllListeners('SIGTERM').on('SIGTERM', shutdown);
-};
-
-GhostServer.prototype.logShutdownMessages = function () {
-    console.log('Ghost is closing connections'.red);
-};
-
-GhostServer.prototype.logUpgradeWarning = function () {
-    errors.logWarn(
-        'Ghost no longer starts automatically when using it as an npm module.',
-        'If you\'re seeing this message, you may need to update your custom code.',
-        'Please see the docs at http://tinyurl.com/npm-upgrade for more information.'
-    );
+    process.removeAllListeners('SIGINT').on('SIGINT', shutdown).removeAllListeners('SIGTERM').on('SIGTERM', shutdown);
 };
 
 /**
- * Starts the ghost server listening on the configured port.
- * Alternatively you can pass in your own express instance and let Ghost
- * start lisetning for you.
- * @param  {Object=} externalApp Optional express app instance.
- * @return {Promise}
+ * ### Log Shutdown Messages
  */
-GhostServer.prototype.start = function (externalApp) {
-    var self = this,
-        rootApp = externalApp ? externalApp : self.rootApp;
-
-    // ## Start Ghost App
-    return new Promise(function (resolve) {
-        if (config.getSocket()) {
-            // Make sure the socket is gone before trying to create another
-            try {
-                fs.unlinkSync(config.getSocket());
-            } catch (e) {
-                // We can ignore this.
-            }
-
-            self.httpServer = rootApp.listen(
-                config.getSocket()
-            );
-
-            fs.chmod(config.getSocket(), '0660');
-        } else {
-            self.httpServer = rootApp.listen(
-                config.server.port,
-                config.server.host
-            );
-        }
-
-        self.httpServer.on('error', function (error) {
-            if (error.errno === 'EADDRINUSE') {
-                errors.logError(
-                    '(EADDRINUSE) Cannot start Ghost.',
-                    'Port ' + config.server.port + ' is already in use by another program.',
-                    'Is another Ghost instance already running?'
-                );
-            } else {
-                errors.logError(
-                    '(Code: ' + error.errno + ')',
-                    'There was an error starting your server.',
-                    'Please use the error code above to search for a solution.'
-                );
-            }
-            process.exit(-1);
-        });
-        self.httpServer.on('connection', self.connection.bind(self));
-        self.httpServer.on('listening', function () {
-            self.logStartMessages();
-            clearTimeout(self.upgradeWarning);
-            resolve(self);
-        });
-    });
-};
-
-// Returns a promise that will be fulfilled when the server stops.
-// If the server has not been started, the promise will be fulfilled
-// immediately
-GhostServer.prototype.stop = function () {
-    var self = this;
-
-    return new Promise(function (resolve) {
-        if (self.httpServer === null) {
-            resolve(self);
-        } else {
-            self.httpServer.close(function () {
-                self.httpServer = null;
-                self.logShutdownMessages();
-                resolve(self);
-            });
-
-            self.closeConnections();
-        }
-    });
-};
-
-// Restarts the ghost application
-GhostServer.prototype.restart = function () {
-    return this.stop().then(this.start.bind(this));
-};
-
-// To be called after `stop`
-GhostServer.prototype.hammertime = function () {
-    console.log('Can\'t touch this'.green);
-
-    return Promise.resolve(this);
+GhostServer.prototype.logShutdownMessages = function () {
+    common.logging.warn(common.i18n.t('notices.httpServer.ghostIsClosingConnections'));
 };
 
 module.exports = GhostServer;

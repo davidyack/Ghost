@@ -1,29 +1,27 @@
-/*globals describe, before, beforeEach, afterEach, it */
-/*jshint expr:true*/
-var testUtils   = require('../../utils'),
-    should      = require('should'),
-    _           = require('lodash'),
-
-    // Stuff we are testing
-    RoleAPI     = require('../../../server/api/roles'),
-    context     = testUtils.context;
+var should = require('should'),
+    testUtils = require('../../utils'),
+    _ = require('lodash'),
+    RoleAPI = require('../../../server/api/roles'),
+    context = testUtils.context;
 
 describe('Roles API', function () {
     // Keep the DB clean
     before(testUtils.teardown);
-    afterEach(testUtils.teardown);
-    beforeEach(testUtils.setup('users:roles', 'perms:role', 'perms:init'));
+    after(testUtils.teardown);
+
+    before(testUtils.setup('users:roles', 'perms:role', 'perms:init'));
 
     describe('Browse', function () {
         function checkBrowseResponse(response) {
             should.exist(response);
             testUtils.API.checkResponse(response, 'roles');
             should.exist(response.roles);
-            response.roles.should.have.length(4);
+            response.roles.should.have.length(5);
             testUtils.API.checkResponse(response.roles[0], 'role');
             testUtils.API.checkResponse(response.roles[1], 'role');
             testUtils.API.checkResponse(response.roles[2], 'role');
             testUtils.API.checkResponse(response.roles[3], 'role');
+            testUtils.API.checkResponse(response.roles[4], 'role');
         }
 
         it('Owner can browse', function (done) {
@@ -54,6 +52,13 @@ describe('Roles API', function () {
             }).catch(done);
         });
 
+        it('Contributor can browse', function (done) {
+            RoleAPI.browse(context.contributor).then(function (response) {
+                checkBrowseResponse(response);
+                done();
+            }).catch(done);
+        });
+
         it('No-auth CANNOT browse', function (done) {
             RoleAPI.browse().then(function () {
                 done(new Error('Browse roles is not denied without authentication.'));
@@ -68,13 +73,15 @@ describe('Roles API', function () {
             should.exist(response);
             should.exist(response.roles);
             testUtils.API.checkResponse(response, 'roles');
-            response.roles.should.have.length(3);
+            response.roles.should.have.length(4);
             testUtils.API.checkResponse(response.roles[0], 'role');
             testUtils.API.checkResponse(response.roles[1], 'role');
             testUtils.API.checkResponse(response.roles[2], 'role');
+            testUtils.API.checkResponse(response.roles[3], 'role');
             response.roles[0].name.should.equal('Administrator');
             response.roles[1].name.should.equal('Editor');
             response.roles[2].name.should.equal('Author');
+            response.roles[3].name.should.equal('Contributor');
         }
 
         it('Owner can assign all', function (done) {
@@ -91,20 +98,32 @@ describe('Roles API', function () {
             }).catch(done);
         });
 
-        it('Editor can assign Author', function (done) {
+        it('Editor can assign Author & Contributor', function (done) {
             RoleAPI.browse(_.extend({}, context.editor, {permissions: 'assign'})).then(function (response) {
                 should.exist(response);
                 should.exist(response.roles);
                 testUtils.API.checkResponse(response, 'roles');
-                response.roles.should.have.length(1);
+                response.roles.should.have.length(2);
                 testUtils.API.checkResponse(response.roles[0], 'role');
+                testUtils.API.checkResponse(response.roles[1], 'role');
                 response.roles[0].name.should.equal('Author');
+                response.roles[1].name.should.equal('Contributor');
                 done();
             }).catch(done);
         });
 
         it('Author CANNOT assign any', function (done) {
             RoleAPI.browse(_.extend({}, context.author, {permissions: 'assign'})).then(function (response) {
+                should.exist(response);
+                should.exist(response.roles);
+                testUtils.API.checkResponse(response, 'roles');
+                response.roles.should.have.length(0);
+                done();
+            }).catch(done);
+        });
+
+        it('Contributor CANNOT assign any', function (done) {
+            RoleAPI.browse(_.extend({}, context.contributor, {permissions: 'assign'})).then(function (response) {
                 should.exist(response);
                 should.exist(response.roles);
                 testUtils.API.checkResponse(response, 'roles');

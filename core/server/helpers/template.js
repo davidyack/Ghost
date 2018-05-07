@@ -1,17 +1,19 @@
-var templates     = {},
-    hbs           = require('express-hbs'),
-    errors        = require('../errors');
+var templates = {},
+    _ = require('lodash'),
+    proxy = require('./proxy'),
+    hbs = require('../services/themes/engine');
 
 // ## Template utils
 
 // Execute a template helper
 // All template helpers are register as partial view.
-templates.execute = function (name, context) {
+templates.execute = function execute(name, context, options) {
     var partial = hbs.handlebars.partials[name];
 
     if (partial === undefined) {
-        errors.logAndThrowError('Template ' + name + ' not found.');
-        return;
+        throw new proxy.errors.IncorrectUsageError({
+            message: proxy.i18n.t('warnings.helpers.template.templateNotFound', {name: name})
+        });
     }
 
     // If the partial view is not compiled, it compiles and saves in handlebars
@@ -19,50 +21,12 @@ templates.execute = function (name, context) {
         hbs.registerPartial(partial);
     }
 
-    return new hbs.handlebars.SafeString(partial(context));
+    return new hbs.SafeString(partial(context, options));
 };
 
-// Given a theme object and a post object this will return
-// which theme template page should be used.
-// If given a post object that is a regular post
-// it will return 'post'.
-// If given a static post object it will return 'page'.
-// If given a static post object and a custom page template
-// exits it will return that page.
-templates.getThemeViewForPost = function (themePaths, post) {
-    var customPageView = 'page-' + post.slug,
-        view = 'post';
-
-    if (post.page) {
-        if (themePaths.hasOwnProperty(customPageView + '.hbs')) {
-            view = customPageView;
-        } else if (themePaths.hasOwnProperty('page.hbs')) {
-            view = 'page';
-        }
-    }
-
-    return view;
-};
-
-// Given a theme object and a tag slug this will return
-// which theme template page should be used.
-// If no default or custom tag template exists then 'index'
-// will be returned
-// If no custom tag template exists but a default does then
-// 'tag' will be returned
-// If given a tag slug and a custom tag template
-// exits it will return that view.
-templates.getThemeViewForTag = function (themePaths, tag) {
-    var customTagView = 'tag-' + tag,
-        view = 'tag';
-
-    if (themePaths.hasOwnProperty(customTagView + '.hbs')) {
-        view = customTagView;
-    } else if (!themePaths.hasOwnProperty('tag.hbs')) {
-        view = 'index';
-    }
-
-    return view;
-};
+templates.asset = _.template('<%= source %>?v=<%= version %>');
+templates.link = _.template('<a href="<%= url %>"><%= text %></a>');
+templates.script = _.template('<script src="<%= source %>?v=<%= version %>"></script>');
+templates.input = _.template('<input class="<%= className %>" type="<%= type %>" name="<%= name %>" <%= extras %> />');
 
 module.exports = templates;

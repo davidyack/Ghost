@@ -1,17 +1,15 @@
-/*globals describe, before, beforeEach, afterEach, it*/
-/*jshint expr:true*/
-var testUtils       = require('../../utils'),
-    should          = require('should'),
+var should = require('should'),
+    testUtils = require('../../utils'),
 
     // Stuff we are testing
-    AppFieldsModel  = require('../../../server/models/app-field').AppField,
-    context         = testUtils.context.admin;
+    AppFieldsModel = require('../../../server/models/app-field').AppField,
+    context = testUtils.context.admin;
 
 describe('App Fields Model', function () {
     // Keep the DB clean
     before(testUtils.teardown);
-    afterEach(testUtils.teardown);
-    beforeEach(testUtils.setup('app_field'));
+    after(testUtils.teardown);
+    before(testUtils.setup('app_field'));
 
     before(function () {
         should.exist(AppFieldsModel);
@@ -28,7 +26,7 @@ describe('App Fields Model', function () {
     });
 
     it('can findOne', function (done) {
-        AppFieldsModel.findOne({id: 1}).then(function (foundAppField) {
+        AppFieldsModel.findOne({id: testUtils.DataGenerator.Content.app_fields[0].id}).then(function (foundAppField) {
             should.exist(foundAppField);
 
             foundAppField.get('created_at').should.be.an.instanceof(Date);
@@ -38,12 +36,12 @@ describe('App Fields Model', function () {
     });
 
     it('can edit', function (done) {
-        AppFieldsModel.findOne({id: 1}).then(function (foundAppField) {
+        AppFieldsModel.findOne({id: testUtils.DataGenerator.Content.app_fields[0].id}).then(function (foundAppField) {
             should.exist(foundAppField);
 
             return foundAppField.set({value: '350'}).save(null, context);
         }).then(function () {
-            return AppFieldsModel.findOne({id: 1});
+            return AppFieldsModel.findOne({id: testUtils.DataGenerator.Content.app_fields[0].id});
         }).then(function (updatedAppField) {
             should.exist(updatedAppField);
 

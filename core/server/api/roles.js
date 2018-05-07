@@ -1,17 +1,18 @@
 // # Roles API
 // RESTful API for the Role resource
-var Promise         = require('bluebird'),
-    _               = require('lodash'),
-    canThis         = require('../permissions').canThis,
-    dataProvider    = require('../models'),
-    errors          = require('../errors'),
+var Promise = require('bluebird'),
+    pipeline = require('../lib/promise/pipeline'),
+    localUtils = require('./utils'),
+    canThis = require('../services/permissions').canThis,
+    models = require('../models'),
+    docName = 'roles',
 
     roles;
 
 /**
  * ## Roles API Methods
  *
- * **See:** [API Methods](index.js.html#api%20methods)
+ * **See:** [API Methods](constants.js.html#api%20methods)
  */
 roles = {
     /**
@@ -28,37 +29,50 @@ roles = {
      * @returns {Promise(Roles)} Roles Collection
      */
     browse: function browse(options) {
-        var permissionMap = [];
-        options = options || {};
+        var permittedOptions = ['permissions'],
+            tasks;
 
-        return canThis(options.context).browse.role().then(function () {
-            return dataProvider.Role.findAll(options).then(function (foundRoles) {
-                if (options.permissions === 'assign') {
-                    // Hacky implementation of filtering because when.filter is only available in when 3.4.0,
-                    // but that's buggy and kills other tests and introduces Heisenbugs. Until we turn everything
-                    // to Bluebird, this works. Sorry.
-                    // TODO: replace with better filter when bluebird lands
-                    _.each(foundRoles.toJSON(), function (role) {
-                        permissionMap.push(canThis(options.context).assign.role(role).then(function () {
-                            if (role.name === 'Owner') {
-                                return null;
-                            }
-                            return role;
-                        }).catch(function () {
-                            return null;
-                        }));
+        /**
+         * ### Model Query
+         * Make the call to the Model layer
+         * @param {Object} options
+         * @returns {Object} options
+         */
+        function modelQuery(options) {
+            return models.Role.findAll(options)
+                .then(function onModelResponse(models) {
+                    var roles = models.map(function (role) {
+                        return role.toJSON();
                     });
 
-                    return Promise.all(permissionMap).then(function (resolved) {
-                        return {roles: _.filter(resolved, function (role) {
-                            return role !== null;
-                        })};
-                    }).catch(errors.logAndThrowError);
-                }
-                return {roles: foundRoles.toJSON()};
-            });
-        })
-        .catch(errors.logAndThrowError);
+                    if (options.permissions !== 'assign') {
+                        return {roles: roles};
+                    }
+
+                    return Promise.filter(roles.map(function (role) {
+                        return canThis(options.context).assign.role(role)
+                            .return(role)
+                            .catch(function () {});
+                    }), function (value) {
+                        return value && value.name !== 'Owner';
+                    }).then(function (roles) {
+                        return {
+                            roles: roles
+                        };
+                    });
+                });
+        }
+
+        // Push all of our tasks into a `tasks` array in the correct order
+        tasks = [
+            localUtils.validate(docName, {opts: permittedOptions}),
+            localUtils.convertOptions(),
+            localUtils.handlePermissions(docName, 'browse'),
+            modelQuery
+        ];
+
+        // Pipeline calls each task passing the result of one to be the arguments for the next
+        return pipeline(tasks, options);
     }
 };
 

@@ -1,65 +1,79 @@
 // # Configuration API
 // RESTful API for browsing the configuration
-var _                  = require('lodash'),
-    config             = require('../config'),
-    errors             = require('../errors'),
-    Promise            = require('bluebird'),
-
+var Promise = require('bluebird'),
+    _ = require('lodash'),
+    urlService = require('../services/url'),
+    models = require('../models'),
+    config = require('../config'),
+    settingsCache = require('../services/settings/cache'),
+    ghostVersion = require('../lib/ghost-version'),
     configuration;
 
-function getValidKeys() {
-    var validKeys = {
-            fileStorage: config.fileStorage === false ? false : true,
-            apps: config.apps === true ? true : false,
-            tagsUI: config.tagsUI === true ? true : false,
-            codeInjectionUI: config.codeInjectionUI === true ? true : false,
-            version: config.ghostVersion,
-            environment: process.env.NODE_ENV,
-            database: config.database.client,
-            mail: _.isObject(config.mail) ? config.mail.transport : '',
-            blogUrl: config.url.replace(/\/$/, ''),
-            blogTitle: config.theme.title
-        };
+function fetchAvailableTimezones() {
+    var timezones = require('../data/timezones.json');
+    return timezones;
+}
 
-    return validKeys;
+function getAboutConfig() {
+    return {
+        version: ghostVersion.full,
+        environment: config.get('env'),
+        database: config.get('database').client,
+        mail: _.isObject(config.get('mail')) ? config.get('mail').transport : ''
+    };
+}
+
+function getBaseConfig() {
+    return {
+        useGravatar: !config.isPrivacyDisabled('useGravatar'),
+        publicAPI: config.get('publicAPI') === true,
+        blogUrl: urlService.utils.urlFor('home', true),
+        blogTitle: settingsCache.get('title'),
+        clientExtensions: config.get('clientExtensions'),
+        enableDeveloperExperiments: config.get('enableDeveloperExperiments')
+    };
 }
 
 /**
  * ## Configuration API Methods
  *
- * **See:** [API Methods](index.js.html#api%20methods)
+ * We need to load the client credentials dynamically.
+ *
+ * **See:** [API Methods](constants.js.html#api%20methods)
  */
 configuration = {
 
     /**
-     * ### Browse
-     * Fetch all configuration keys
-     * @returns {Promise(Configurations)}
-     */
-    browse: function browse() {
-        return Promise.resolve({configuration: _.map(getValidKeys(), function (value, key) {
-            return {
-                key: key,
-                value: value
-            };
-        })});
-    },
-
-    /**
-     * ### Read
-     *
+     * Always returns {configuration: []}
+     * Sometimes the array contains configuration items
+     * @param {Object} options
+     * @returns {Promise<Object>}
      */
     read: function read(options) {
-        var data = getValidKeys();
+        options = options || {};
 
-        if (_.has(data, options.key)) {
-            return Promise.resolve({configuration: [{
-                key: options.key,
-                value: data[options.key]
-            }]});
-        } else {
-            return Promise.reject(new errors.NotFoundError('Invalid key'));
+        if (!options.key) {
+            return models.Client.findOne({slug: 'ghost-admin'})
+                .then(function (ghostAdmin) {
+                    var configuration = getBaseConfig();
+
+                    configuration.clientId = ghostAdmin.get('slug');
+                    configuration.clientSecret = ghostAdmin.get('secret');
+
+                    return {configuration: [configuration]};
+                });
         }
+
+        if (options.key === 'about') {
+            return Promise.resolve({configuration: [getAboutConfig()]});
+        }
+
+        // Timezone endpoint
+        if (options.key === 'timezones') {
+            return Promise.resolve({configuration: [fetchAvailableTimezones()]});
+        }
+
+        return Promise.resolve({configuration: []});
     }
 };
 

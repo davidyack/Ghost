@@ -1,25 +1,32 @@
-var Settings,
+const Promise = require('bluebird'),
+    _ = require('lodash'),
+    uuid = require('uuid'),
+    crypto = require('crypto'),
     ghostBookshelf = require('./base'),
-    uuid           = require('node-uuid'),
-    _              = require('lodash'),
-    errors         = require('../errors'),
-    Promise        = require('bluebird'),
-    validation     = require('../data/validation'),
-    internal       = {context: {internal: true}},
+    common = require('../lib/common'),
+    validation = require('../data/validation'),
+    internalContext = {context: {internal: true}};
 
-    defaultSettings;
+let Settings, defaultSettings;
 
 // For neatness, the defaults file is split into categories.
 // It's much easier for us to work with it as a single level
 // instead of iterating those categories every time
 function parseDefaultSettings() {
-    var defaultSettingsInCategories = require('../data/default-settings.json'),
-        defaultSettingsFlattened = {};
+    var defaultSettingsInCategories = require('../data/schema/').defaultSettings,
+        defaultSettingsFlattened = {},
+        dynamicDefault = {
+            db_hash: uuid.v4(),
+            public_hash: crypto.randomBytes(15).toString('hex')
+        };
 
-    _.each(defaultSettingsInCategories, function (settings, categoryName) {
-        _.each(settings, function (setting, settingName) {
+    _.each(defaultSettingsInCategories, function each(settings, categoryName) {
+        _.each(settings, function each(setting, settingName) {
             setting.type = categoryName;
             setting.key = settingName;
+            if (dynamicDefault[setting.key]) {
+                setting.defaultValue = dynamicDefault[setting.key];
+            }
 
             defaultSettingsFlattened[settingName] = setting;
         });
@@ -42,52 +49,57 @@ Settings = ghostBookshelf.Model.extend({
 
     tableName: 'settings',
 
-    defaults: function () {
+    defaults: function defaults() {
         return {
-            uuid: uuid.v4(),
             type: 'core'
         };
     },
 
-    validate: function () {
-        var self = this,
-            setting = this.toJSON();
-
-        return validation.validateSchema(self.tableName, setting).then(function () {
-            return validation.validateSettings(getDefaultSettings(), self);
-        }).then(function () {
-            var themeName = setting.value || '';
-
-            if (setting.key !== 'activeTheme') {
-                return;
-            }
-
-            return validation.validateActiveTheme(themeName);
-        });
+    emitChange: function emitChange(event, options) {
+        const eventToTrigger = 'settings' + '.' + event;
+        ghostBookshelf.Model.prototype.emitChange.bind(this)(this, eventToTrigger, options);
     },
 
-    saving: function () {
-         // disabling sanitization until we can implement a better version
-         // All blog setting keys that need their values to be escaped.
-         // if (this.get('type') === 'blog' && _.contains(['title', 'description', 'email'], this.get('key'))) {
-         //    this.set('value', this.sanitize('value'));
-         // }
-
-        return ghostBookshelf.Model.prototype.saving.apply(this, arguments);
-    }
-
-}, {
-    findOne: function (options) {
-        // Allow for just passing the key instead of attributes
-        if (!_.isObject(options)) {
-            options = {key: options};
-        }
-        return Promise.resolve(ghostBookshelf.Model.findOne.call(this, options));
+    onDestroyed: function onDestroyed(model, options) {
+        model.emitChange('deleted', options);
+        model.emitChange(model._previousAttributes.key + '.' + 'deleted', options);
     },
 
-    edit: function (data, options) {
+    onCreated: function onCreated(model, response, options) {
+        model.emitChange('added', options);
+        model.emitChange(model.attributes.key + '.' + 'added', options);
+    },
+
+    onUpdated: function onUpdated(model, response, options) {
+        model.emitChange('edited', options);
+        model.emitChange(model.attributes.key + '.' + 'edited', options);
+    },
+
+    onValidate: function onValidate() {
         var self = this;
-        options = this.filterOptions(options, 'edit');
+
+        return ghostBookshelf.Model.prototype.onValidate.apply(this, arguments)
+            .then(function then() {
+                return validation.validateSettings(getDefaultSettings(), self);
+            });
+    }
+}, {
+    findOne: function (data, options) {
+        if (_.isEmpty(data)) {
+            options = data;
+        }
+
+        // Allow for just passing the key instead of attributes
+        if (!_.isObject(data)) {
+            data = {key: data};
+        }
+
+        return Promise.resolve(ghostBookshelf.Model.findOne.call(this, data, options));
+    },
+
+    edit: function (data, unfilteredOptions) {
+        var options = this.filterOptions(unfilteredOptions, 'edit'),
+            self = this;
 
         if (!Array.isArray(data)) {
             data = [data];
@@ -95,61 +107,77 @@ Settings = ghostBookshelf.Model.extend({
 
         return Promise.map(data, function (item) {
             // Accept an array of models as input
-            if (item.toJSON) { item = item.toJSON(); }
+            if (item.toJSON) {
+                item = item.toJSON();
+            }
             if (!(_.isString(item.key) && item.key.length > 0)) {
-                return Promise.reject(new errors.ValidationError('Value in [settings.key] cannot be blank.'));
+                return Promise.reject(new common.errors.ValidationError({message: common.i18n.t('errors.models.settings.valueCannotBeBlank')}));
             }
 
             item = self.filterData(item);
 
-            return Settings.forge({key: item.key}).fetch(options).then(function (setting) {
+            return Settings.forge({key: item.key}).fetch(options).then(function then(setting) {
                 if (setting) {
-                    return setting.save({value: item.value}, options);
+                    // it's allowed to edit all attributes in case of importing/migrating
+                    if (options.importing) {
+                        return setting.save(item, options);
+                    } else {
+                        // If we have a value, set it.
+                        if (item.hasOwnProperty('value')) {
+                            setting.set('value', item.value);
+                        }
+                        // Internal context can overwrite type (for fixture migrations)
+                        if (options.context && options.context.internal && item.hasOwnProperty('type')) {
+                            setting.set('type', item.type);
+                        }
+
+                        // If anything has changed, save the updated model
+                        if (setting.hasChanged()) {
+                            return setting.save(null, options);
+                        }
+
+                        return setting;
+                    }
                 }
 
-                return Promise.reject(new errors.NotFoundError('Unable to find setting to update: ' + item.key));
-            }, errors.logAndThrowError);
+                return Promise.reject(new common.errors.NotFoundError({message: common.i18n.t('errors.models.settings.unableToFindSetting', {key: item.key})}));
+            });
         });
     },
 
-    populateDefault: function (key) {
-        if (!getDefaultSettings()[key]) {
-            return Promise.reject(new errors.NotFoundError('Unable to find default setting: ' + key));
+    populateDefaults: function populateDefaults(unfilteredOptions) {
+        var options = this.filterOptions(unfilteredOptions, 'populateDefaults'),
+            self = this;
+
+        if (!options.context) {
+            options.context = internalContext.context;
         }
 
-        return this.findOne({key: key}).then(function (foundSetting) {
-            if (foundSetting) {
-                return foundSetting;
-            }
+        return this
+            .findAll(options)
+            .then(function checkAllSettings(allSettings) {
+                var usedKeys = allSettings.models.map(function mapper(setting) {
+                        return setting.get('key');
+                    }),
+                    insertOperations = [];
 
-            var defaultSetting = _.clone(getDefaultSettings()[key]);
-            defaultSetting.value = defaultSetting.defaultValue;
+                _.each(getDefaultSettings(), function forEachDefault(defaultSetting, defaultSettingKey) {
+                    var isMissingFromDB = usedKeys.indexOf(defaultSettingKey) === -1;
+                    if (isMissingFromDB) {
+                        defaultSetting.value = defaultSetting.defaultValue;
+                        insertOperations.push(Settings.forge(defaultSetting).save(null, options));
+                    }
+                });
 
-            return Settings.forge(defaultSetting).save(null, internal);
-        });
-    },
-
-    populateDefaults: function () {
-        return this.findAll().then(function (allSettings) {
-            var usedKeys = allSettings.models.map(function (setting) { return setting.get('key'); }),
-                insertOperations = [];
-
-            _.each(getDefaultSettings(), function (defaultSetting, defaultSettingKey) {
-                var isMissingFromDB = usedKeys.indexOf(defaultSettingKey) === -1;
-                // Temporary code to deal with old databases with currentVersion settings
-                if (defaultSettingKey === 'databaseVersion' && usedKeys.indexOf('currentVersion') !== -1) {
-                    isMissingFromDB = false;
+                if (insertOperations.length > 0) {
+                    return Promise.all(insertOperations).then(function fetchAllToReturn() {
+                        return self.findAll(options);
+                    });
                 }
-                if (isMissingFromDB) {
-                    defaultSetting.value = defaultSetting.defaultValue;
-                    insertOperations.push(Settings.forge(defaultSetting).save(null, internal));
-                }
+
+                return allSettings;
             });
-
-            return Promise.all(insertOperations);
-        });
     }
-
 });
 
 module.exports = {

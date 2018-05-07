@@ -1,21 +1,20 @@
-/*globals describe, before, beforeEach, afterEach, it */
-/*jshint expr:true*/
-var testUtils           = require('../../utils'),
-    should              = require('should'),
-    _                   = require('lodash'),
+var should = require('should'),
+    testUtils = require('../../utils'),
+    _ = require('lodash'),
 
     // Stuff we are testing
-    SettingsAPI         = require('../../../server/api/settings'),
-    defaultContext      = {user: 1},
-    internalContext     = {internal: true},
+    SettingsAPI = require('../../../server/api/settings'),
+    settingsCache = require('../../../server/services/settings/cache'),
+    defaultContext = {user: 1},
+    internalContext = {internal: true},
     callApiWithContext,
     getErrorDetails;
 
 describe('Settings API', function () {
     // Keep the DB clean
     before(testUtils.teardown);
-    afterEach(testUtils.teardown);
-    beforeEach(testUtils.setup('users:roles', 'perms:setting', 'settings', 'perms:init'));
+    after(testUtils.teardown);
+    before(testUtils.setup('settings', 'users:roles', 'perms:setting', 'perms:init'));
 
     should.exist(SettingsAPI);
 
@@ -29,27 +28,22 @@ describe('Settings API', function () {
 
         return SettingsAPI[method].apply({}, args.slice(2));
     };
-    getErrorDetails = function (done) {
-        return function (err) {
-            if (err instanceof Error) {
-                return done(err);
-            }
+    getErrorDetails = function (err) {
+        if (err instanceof Error) {
+            throw err;
+        }
 
-            done(new Error(err.message));
-        };
+        throw new Error(err.message);
     };
 
-    it('uses Date objects for dateTime fields', function (done) {
+    it('uses Date objects for dateTime fields', function () {
         return callApiWithContext(defaultContext, 'browse', {}).then(function (results) {
             should.exist(results);
-
             results.settings[0].created_at.should.be.an.instanceof(Date);
-
-            done();
-        }).catch(getErrorDetails(done));
+        }).catch(getErrorDetails);
     });
 
-    it('can browse', function (done) {
+    it('can browse', function () {
         return callApiWithContext(defaultContext, 'browse', {}).then(function (results) {
             should.exist(results);
             testUtils.API.checkResponse(results, 'settings');
@@ -57,13 +51,13 @@ describe('Settings API', function () {
             testUtils.API.checkResponse(results.settings[0], 'setting');
 
             // Check for a core setting
-            should.not.exist(_.find(results.settings, function (setting) { return setting.type === 'core'; }));
-
-            done();
-        }).catch(getErrorDetails(done));
+            should.not.exist(_.find(results.settings, function (setting) {
+                return setting.type === 'core';
+            }));
+        }).catch(getErrorDetails);
     });
 
-    it('can browse by type', function (done) {
+    it('can browse by type', function () {
         return callApiWithContext(defaultContext, 'browse', {type: 'blog'}).then(function (results) {
             should.exist(results);
             testUtils.API.checkResponse(results, 'settings');
@@ -71,13 +65,13 @@ describe('Settings API', function () {
             testUtils.API.checkResponse(results.settings[0], 'setting');
 
             // Check for a core setting
-            should.not.exist(_.find(results.settings, function (setting) { return setting.type === 'core'; }));
-
-            done();
-        }).catch(getErrorDetails(done));
+            should.not.exist(_.find(results.settings, function (setting) {
+                return setting.type === 'core';
+            }));
+        }).catch(getErrorDetails);
     });
 
-    it('returns core settings for internal requests when browsing', function (done) {
+    it('returns core settings for internal requests when browsing', function () {
         return callApiWithContext(internalContext, 'browse', {}).then(function (results) {
             should.exist(results);
             testUtils.API.checkResponse(results, 'settings');
@@ -85,56 +79,52 @@ describe('Settings API', function () {
             testUtils.API.checkResponse(results.settings[0], 'setting');
 
             // Check for a core setting
-            should.exist(_.find(results.settings, function (setting) { return setting.type === 'core'; }));
-
-            done();
-        }).catch(getErrorDetails(done));
+            should.exist(_.find(results.settings, function (setting) {
+                return setting.type === 'core';
+            }));
+        }).catch(getErrorDetails);
     });
 
-    it('can read blog settings by string', function (done) {
+    it('can read blog settings by string', function () {
         return SettingsAPI.read('title').then(function (response) {
             should.exist(response);
             testUtils.API.checkResponse(response, 'settings');
             response.settings.length.should.equal(1);
             testUtils.API.checkResponse(response.settings[0], 'setting');
-
-            done();
-        }).catch(getErrorDetails(done));
+        }).catch(getErrorDetails);
     });
 
-    it('cannot read core settings if not an internal request', function (done) {
-        return callApiWithContext(defaultContext, 'read',  {key: 'databaseVersion'}).then(function () {
-            done(new Error('Allowed to read databaseVersion with external request'));
+    it('cannot read core settings if not an internal request', function () {
+        return callApiWithContext(defaultContext, 'read', {key: 'db_hash'}).then(function () {
+            throw new Error('Allowed to read db_hash with external request');
         }).catch(function (error) {
             should.exist(error);
-            error.type.should.eql('NoPermissionError');
-            done();
-        }).catch(done);
+            error.errorType.should.eql('NoPermissionError');
+        });
     });
 
-    it('can read core settings if an internal request', function (done) {
-        return callApiWithContext(internalContext, 'read', {key: 'databaseVersion'}).then(function (response) {
+    it('can read core settings if an internal request', function () {
+        return callApiWithContext(internalContext, 'read', {key: 'db_hash'}).then(function (response) {
             should.exist(response);
             testUtils.API.checkResponse(response, 'settings');
             response.settings.length.should.equal(1);
             testUtils.API.checkResponse(response.settings[0], 'setting');
-
-            done();
-        }).catch(getErrorDetails(done));
+        }).catch(getErrorDetails);
     });
 
-    it('can read by object key', function (done) {
+    it('can read by object key', function () {
         return callApiWithContext(defaultContext, 'read', {key: 'title'}).then(function (response) {
             should.exist(response);
             testUtils.API.checkResponse(response, 'settings');
             response.settings.length.should.equal(1);
             testUtils.API.checkResponse(response.settings[0], 'setting');
-
-            done();
-        }).catch(getErrorDetails(done));
+        }).catch(getErrorDetails);
     });
 
-    it('can edit', function (done) {
+    it('can edit', function () {
+        // see default-settings.json
+        settingsCache.get('title').should.eql('Ghost');
+
         return callApiWithContext(defaultContext, 'edit', {settings: [{key: 'title', value: 'UpdatedGhost'}]}, {})
             .then(function (response) {
                 should.exist(response);
@@ -142,58 +132,66 @@ describe('Settings API', function () {
                 response.settings.length.should.equal(1);
                 testUtils.API.checkResponse(response.settings[0], 'setting');
 
-                done();
-            }).catch(done);
+                settingsCache.get('title').should.eql('UpdatedGhost');
+            });
     });
 
-    it('cannot edit a core setting if not an internal request', function (done) {
-        return callApiWithContext(defaultContext, 'edit', {settings: [{key: 'databaseVersion', value: '999'}]}, {})
+    it('cannot edit a core setting if not an internal request', function () {
+        return callApiWithContext(defaultContext, 'edit', {settings: [{key: 'db_hash', value: 'hash'}]}, {})
             .then(function () {
-                done(new Error('Allowed to edit a core setting as external request'));
+                throw new Error('Allowed to edit a core setting as external request');
             }).catch(function (err) {
                 should.exist(err);
 
-                err.type.should.eql('NoPermissionError');
-
-                done();
-            }).catch(done);
+                err.errorType.should.eql('NoPermissionError');
+            });
     });
 
-    it('can edit a core setting with an internal request', function (done) {
-        return callApiWithContext(internalContext, 'edit', {settings: [{key: 'databaseVersion', value: '999'}]}, {})
+    it('can edit a core setting with an internal request', function () {
+        return callApiWithContext(internalContext, 'edit', {settings: [{key: 'db_hash', value: 'hash'}]}, {})
             .then(function (response) {
                 should.exist(response);
                 testUtils.API.checkResponse(response, 'settings');
                 response.settings.length.should.equal(1);
                 testUtils.API.checkResponse(response.settings[0], 'setting');
-
-                done();
-            }).catch(done);
+            });
     });
 
-    it('ensures values are stringified before saving to database', function (done) {
+    it('cannot edit the active theme setting via API even with internal context', function () {
+        return callApiWithContext(internalContext, 'edit', 'active_theme', {
+            settings: [{key: 'active_theme', value: 'rasper'}]
+        }).then(function () {
+            throw new Error('Allowed to change active theme settting');
+        }).catch(function (err) {
+            should.exist(err);
+
+            err.errorType.should.eql('BadRequestError');
+            err.message.should.eql('Attempted to change active_theme via settings API');
+        });
+    });
+
+    it('ensures values are stringified before saving to database', function () {
         return callApiWithContext(defaultContext, 'edit', 'title', []).then(function (response) {
             should.exist(response);
             testUtils.API.checkResponse(response, 'settings');
             response.settings.length.should.equal(1);
             testUtils.API.checkResponse(response.settings[0], 'setting');
             response.settings[0].value.should.equal('[]');
-
-            done();
-        }).catch(done);
+        });
     });
 
-    it('does not allow an active theme which is not installed', function (done) {
-        return callApiWithContext(defaultContext, 'edit', 'activeTheme', {
-            settings: [{key: 'activeTheme', value: 'rasper'}]
-        }).then(function () {
-            done(new Error('Allowed to set an active theme which is not installed'));
-        }).catch(function (err) {
-            should.exist(err);
+    it('set active_timezone: unknown timezone', function () {
+        return callApiWithContext(defaultContext, 'edit', {settings: [{key: 'active_timezone', value: 'MFG'}]}, {})
+            .then(function () {
+                throw new Error('We expect that the active_timezone cannot be stored');
+            }).catch(function (errors) {
+                should.exist(errors);
+                errors.length.should.eql(1);
+                errors[0].errorType.should.eql('ValidationError');
+            });
+    });
 
-            err.type.should.eql('ValidationError');
-
-            done();
-        }).catch(done);
+    it('set active_timezone: known timezone', function () {
+        return callApiWithContext(defaultContext, 'edit', {settings: [{key: 'active_timezone', value: 'Etc/UTC'}]}, {});
     });
 });

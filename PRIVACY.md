@@ -2,7 +2,7 @@
 
 This is a plain English summary of all of the components within Ghost which may affect your privacy in some way. Please keep in mind that if you use third party Themes or Apps with Ghost, there may be additional things not listed here.
 
-Each of the items listed in this document can be disabled via Ghost's `config.js` file. Check out the [configuration guide](http://support.ghost.org/config/) for details.
+Each of the items listed in this document can be disabled via Ghost's `config.[env].json` file. Check out the [configuration guide](https://docs.ghost.org/docs/config#section-privacy) for details.
 
 ## Official Services
 
@@ -11,19 +11,16 @@ Some official services for Ghost are enabled by default. These services connect 
 
 ### Automatic Update Checks
 
-When a new session is started, Ghost pings a Ghost.org endpoint to check if the current version of Ghost is the latest version of Ghost. If an update is available, a notification appears inside Ghost to let you know. Ghost.org collects basic anonymised usage statistics from update check requests.
+When a new session is started, Ghost pings a Ghost.org service to check if the current version of Ghost is the latest version of Ghost. If an update is available, a notification on the About Page appears to let you know. 
 
-This service can be disabled at any time. All of the information and code related to this service is available in the [update-check.js](https://github.com/TryGhost/Ghost/blob/master/core/server/update-check.js) file.
+Ghost will collect basic anonymised usage statistics from your blog before sending the request to the service. You can disable collecting statistics using the [privacy configuration](https://docs.ghost.org/v1/docs/config#section-update-check). You will still receive notifications from the service.
+
+All of the information and code related to this service is available in the [update-check.js](https://github.com/TryGhost/Ghost/blob/master/core/server/update-check.js) file.
 
 
 ## Third Party Services
 
 Ghost uses a number of third party services for specific functionality within Ghost.
-
-
-### Google Fonts
-
-Ghost makes use of the Open Sans [Google Font](https://www.google.com/fonts), which is loaded into the Ghost admin area to provide a typographically stimulating experience.
 
 ### Gravatar
 
@@ -38,10 +35,6 @@ When you publish a new post, Ghost sends out an RPC ping to let third party serv
 
 RPC pings only happen when Ghost is running in the `production` environment.
 
-### Sharing Buttons
-
-The default theme which comes with Ghost contains three sharing buttons to [Twitter](http://twitter.com), [Facebook](http://facebook.com), and [Google Plus](http://plus.google.com). No resources are loaded from any services, however the buttons do allow visitors to your blog to share your content publicly on these respective networks.
-
 ### Structured Data
 
 Ghost outputs basic meta tags to allow rich snippets of your content to be recognised by popular social networks. Currently there are 3 supported rich data protocols which are output in `{{ghost_head}}`:
@@ -49,3 +42,7 @@ Ghost outputs basic meta tags to allow rich snippets of your content to be recog
 - Schema.org - http://schema.org/docs/documents.html
 - Open Graph - http://ogp.me/
 - Twitter cards - https://dev.twitter.com/cards/overview
+
+### Default Theme
+
+The default theme which comes with Ghost loads a copy of jQuery from the jQuery Foundation's [public CDN](https://code.jquery.com/jquery-1.11.3.min.js), and makes use of the Open Sans [Google Font](https://www.google.com/fonts). The theme also contains three sharing buttons to [Twitter](http://twitter.com), [Facebook](http://facebook.com), and [Google Plus](http://plus.google.com). No resources are loaded from any services, however the buttons do allow visitors to your blog to share your content publicly on these respective networks.
